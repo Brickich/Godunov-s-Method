@@ -233,3 +233,8 @@ EXACT_SOLUTION_API void GetSolution(double* x, double* r, double* u, double* p, 
 
 }
 
+int main(int argc, char const *argv[])
+{
+     
+    return 0;
+}

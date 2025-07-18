@@ -2,11 +2,17 @@
 #include <vector>
 #include <cmath>
 #include <fstream>
-#include <stdexcept>
+#include <thread>
+
 
 
 #define GODUNOV_API  extern "C" __declspec(dllexport)
 
+
+enum WaveSide{
+    left_sde,
+    right_side
+};
 
 
 class State
@@ -89,7 +95,7 @@ void BoundaryCondition(std::vector<State>& states){
     
 }
 
-double ComputeF(const State &state, double p_current, bool left_side)
+double ComputeF(const State &state, double p_current)
 {
     double r = state.r, p = state.p, g = state.g, c = state.c;
     double F;
@@ -104,12 +110,11 @@ double ComputeF(const State &state, double p_current, bool left_side)
     return F ;
 }
 
-double ComputeDF(const State &state, double p_current, bool left_side, double tolerance)
+double ComputeDF(const State &state, double p_current, double tolerance)
 {
-    double DF = (ComputeF(state, p_current + tolerance, left_side) - ComputeF(state, p_current - tolerance, left_side)) / (2.0 * tolerance);
+    double DF = (ComputeF(state, p_current + tolerance) - ComputeF(state, p_current - tolerance)) / (2.0 * tolerance);
     return DF;
 }
-
 
 void GetContactParameters(const State& left, const State& right , const double tolerance , double& u_contact , double& p_contact ){
     double Fl, DFl;
@@ -121,10 +126,13 @@ void GetContactParameters(const State& left, const State& right , const double t
     for (int iter =0 ; iter < 100; ++iter)
     {
         if (p_current < 0){
-            throw std::runtime_error("P < 0");
+            std::cout<<"P < 0\n";
+            p_contact = 0;
+            u_contact = 0;
+            return;
         }   
-        Fl = ComputeF(left, p_current, true), DFl = ComputeDF(left, p_current, true, tolerance);
-        Fr = ComputeF(right, p_current, false), DFr = ComputeDF(right, p_current, false, tolerance);
+        Fl = ComputeF(left, p_current), DFl = ComputeDF(left, p_current,  tolerance);
+        Fr = ComputeF(right, p_current), DFr = ComputeDF(right, p_current,  tolerance);
         p_contact = p_current - (Fl + Fr + ur - ul) / (DFl + DFr);
         crit = fabs(p_contact - p_current);
         if (crit < tolerance) break;
@@ -134,15 +142,21 @@ void GetContactParameters(const State& left, const State& right , const double t
 }
 
 State RiemanSolver(const State& left, const State& right, double tolerance){
-    double r, u , p , g , c;
-    double r_new , u_new , p_new;
-    double u_contact , p_contact;
-    double x = 0.5 * (left.x + right.x);
-    if ( fabs(left.r - right.r) < tolerance && fabs(left.p - right.p) < tolerance)
-    {
-        return State(x, 0.5 * (left.r + right.r), 0.5 * (left.u + right.u), 0.5 * (left.p + right.p), 0.5 * (left.g + right.g));
-    }
 
+
+
+    double x = 0.5 * (left.x + right.x);
+    if ( (fabs(left.r - right.r) && fabs(left.p - right.p)) < tolerance)
+    {
+        return State(x, 0.5 * (left.r + right.r), 0.5 * (left.u + right.u), 0.5 * (left.p + right.p), 0.5 *  (left.g + right.g));
+    }
+    if ( -2.0 * (left.c + right.c) / (0.5 * (left.g + right.g) - 1.0) >= left.u - right.u) {
+        std::cout<<"Vacuum \n";
+        return State(x , 0.0 , 0.0 , 0.0 , 0.5 * (left.g + right.g));
+    }
+    double r, u, p, g, c;
+    double r_new, u_new, p_new;
+    double u_contact , p_contact;
     GetContactParameters(left, right, tolerance, u_contact, p_contact);
     double D , D_ , c_;
     if (u_contact <=0){//RIGHT
@@ -243,8 +257,8 @@ void GodunovStep(std::vector<State>& states, double tolerance , double dt, doubl
     states = new_states;
 }
 
-State left_state(0.0 , 1.0 , 0.0 , 1.0 , 1.4);
-State right_state(0.0 , 0.125 , 0.0 , 0.1, 1.4);
+State left_state(0.0 , 1.0 , -10.0 , 1.0 , 1.4);
+State right_state(0.0 , 1.0 , 10.0, 1.0, 1.4);
 int N = 1000;
 std::vector<State> states(N);
 double left_border = 0.0,
@@ -298,3 +312,25 @@ GODUNOV_API void  GetSolution(double* x , double* r, double* u , double* p , dou
     }
 }
 
+
+int main(){
+    BuildGrid(states , left_state , right_state , dx , left_border);
+    double t=0;
+    double dt;
+    while ((t < t_end))
+    {
+        dt = ComputeTimeStep(states , CFL , dx);
+        if (t + dt >= t_end) dt = t_end - t;
+        GodunovStep ( states , tolerance , dt , dx);
+        BoundaryCondition(states);
+        t+=dt;
+    }
+
+    std::ofstream output("output.dat");
+    output<<"x \t r \t u \t p \n";
+    for (auto & state : states)
+    {
+        output<<state.x<<" \t "<<state.r<<" \t "<<state.u<<" \t "<<state.p<<"\n";
+    }
+    
+}

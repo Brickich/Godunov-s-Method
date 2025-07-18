@@ -171,7 +171,7 @@ def RunDiscontinuitySimulation(type:str = "cvr-uv", N = 1000 ,
     # plt.show()
 
 
-RunDiscontinuitySimulation("cvr-uv" , N=100 , 
+RunDiscontinuitySimulation("vacuum" , N=100 , 
                            left_border=-0.5 , right_border=0.5, 
                            t_end=0.15, CFL=1.0 , tolerance=1e-15)
 
